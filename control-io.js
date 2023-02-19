@@ -81,13 +81,38 @@ const blink = async function(gpio, count) {
 const handleButton = async function(button, levelRaw) {
   const level = levelRaw ? 0 : 1;
 
-  if(displayState) {
-    logger.debug(`${button}: trigger`, {level});
-    await mqttClient.publish(`control-io/${button}/STATE`, JSON.stringify(level), {retain: true});
-  } else {
-    logger.debug(`${button}: display on`);
-    await mqttClient.publish('control-io/cmnd/display', '1', {retain: true});
+  logger.debug('handleButton', {button, level, displayState});
+
+  if(buttonHoldTimeout) {
+    logger.debug('buttonHoldTimeout:clear');
+    clearTimeout(buttonHoldTimeout);
+    buttonHoldTimeout = null;
   }
+
+  if(level === 1) {
+    // Button push
+
+    if(displayState) {
+      // Display is on. Start the timeout to switch the display off.
+
+      logger.debug('buttonHoldTimeout:start');
+      buttonHoldTimeout = setTimeout(() => {
+        buttonHoldTimeout = null;
+
+        logger.debug('buttonHoldTimeout:trigger');
+        mqttClient.publish('control-io/cmnd/display', '0', {retain: true});
+      }, ms('1s'));
+    } else {
+      // Display off. Switch on.
+      logger.debug(`${button}: display on`);
+      mqttClient.publish('control-io/cmnd/display', '1', {retain: true});
+    }
+  } else {
+    // Button release
+  }
+
+  logger.debug(`${button}: trigger`, {level});
+  mqttClient.publish(`control-io/${button}/STATE`, JSON.stringify(level), {retain: true});
 };
 
 (async() => {
