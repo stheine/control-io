@@ -6,6 +6,7 @@ import fsPromises            from 'fs/promises';
 
 import _                     from 'lodash';
 import check                 from 'check-types-2';
+import cron                  from 'node-cron';
 import mqtt                  from 'async-mqtt';
 import ms                    from 'ms';
 import pigpio                from 'pigpio';
@@ -15,10 +16,55 @@ import logger                from './logger.js';
 // ###########################################################################
 // Globals
 
+let   buttonHoldTimeout;
 const {Gpio}            = pigpio;
 let   displayState      = 1;
 let   displayBrightness = 70;
 let   mqttClient;
+
+// const localHourToUTCHour = function(localHour) {
+//   const date = new Date();
+//
+//   date.setHours(localHour);
+//
+//   return date.getUTCHours(date);
+// };
+
+const schedule = function(hour, minute, weekdays, fct) {
+  if(typeof minute === 'boolean') {
+    fct      = weekdays;
+    weekdays = minute;
+    minute   = 0;
+  } else if(typeof minute === 'function') {
+    fct      = minute;
+    weekdays = false;
+    minute   = 0;
+  } else if(typeof weekdays === 'function') {
+    fct      = weekdays;
+    weekdays = false;
+  }
+
+  check.assert.number(hour);
+  check.assert.number(minute);
+  check.assert.boolean(weekdays);
+  check.assert.function(fct);
+
+  // Note, scheduling for docker containers is done in UTC.
+  //
+  //             ┌──────────────────────────────────────────────── second (optional)
+  //             │ ┌────────────────────────────────────────────── minute
+  //             │ │         ┌──────────────────────────────────── hour
+  //             │ │         │                           ┌──────── day of month
+  //             │ │         │                           │ ┌────── month
+  //             │ │         │                           │ │ ┌──── day of week (0 is Sunday)
+  //             │ │         │                           │ │ │
+  //             │ │         │                           │ │ │
+  //             S M         H                           D M W
+  cron.schedule(`0 ${minute} ${hour} * * ${weekdays ? '1-5' : '*'}`, () => {
+    logger.debug(`cron execute function at ${hour}:${minute}${weekdays ? ' on a weekday' : ''}`);
+    fct();
+  }, {timezone: 'Europe/Berlin'});
+};
 
 const blink = async function(gpio, count) {
   let state = 1;
@@ -33,9 +79,9 @@ const blink = async function(gpio, count) {
 };
 
 const handleButton = async function(button, levelRaw) {
-  if(displayState) {
-    const level = levelRaw ? 0 : 1;
+  const level = levelRaw ? 0 : 1;
 
+  if(displayState) {
     logger.debug(`${button}: trigger`, {level});
     await mqttClient.publish(`control-io/${button}/STATE`, JSON.stringify(level), {retain: true});
   } else {
@@ -51,13 +97,13 @@ const handleButton = async function(button, levelRaw) {
     await fsPromises.access('/var/run/pigpio.pid', fs.constants.F_OK);
     logger.info('Cleanup pid file of previous run');
     await fsPromises.rm('/var/run/pigpio.pid');
-  } catch(err) {
+  } catch{
     // File does not exist. Nothing to clean up. Fine.
   }
 
   // #########################################################################
   // Startup
-  logger.info(`Startup --------------------------------------------------`);
+  logger.info('Startup --------------------------------------------------');
 
   // #########################################################################
   // Init MQTT
@@ -76,7 +122,7 @@ const handleButton = async function(button, levelRaw) {
   const gpioDisplayPWM = new Gpio(18, {mode: Gpio.OUTPUT});
 
   gpioDisplayPWM.pwmWrite(displayBrightness);
-  await mqttClient.publish(`control-io/brightness/STATE`, JSON.stringify(displayBrightness), {retain: true});
+  await mqttClient.publish('control-io/brightness/STATE', JSON.stringify(displayBrightness), {retain: true});
 
   // Upper Button LED Red / GPIO 24
   const gpioLedRed = new Gpio(24, {mode: Gpio.OUTPUT});
@@ -96,13 +142,13 @@ const handleButton = async function(button, levelRaw) {
 
   const stopProcess = async function() {
     gpioDisplayPWM.pwmWrite(0);
-    
+
     if(mqttClient) {
       await mqttClient.end();
       mqttClient = undefined;
     }
 
-    logger.info(`Shutdown -------------------------------------------------`);
+    logger.info('Shutdown -------------------------------------------------');
 
     process.exit(0);
   };
@@ -147,16 +193,20 @@ const handleButton = async function(button, levelRaw) {
         gpioBeeper.digitalWrite(1);
       } else
       if(cmnd === 'brightness') {
-        if(message === '-') {
-          displayBrightness -= 10;
-        } else if(message === '+') {
-          displayBrightness += 10;
-        }
+        if(_.isNumber(message)) {
+          displayBrightness = message;
+        } else {
+          if(message === '-') {
+            displayBrightness -= 10;
+          } else if(message === '+') {
+            displayBrightness += 10;
+          }
 
-        if(displayBrightness < 0) {
-          displayBrightness = 0;
-        } else if(displayBrightness > 190) {
-          displayBrightness = 190;
+          if(displayBrightness < 0) {
+            displayBrightness = 0;
+          } else if(displayBrightness > 190) {
+            displayBrightness = 190;
+          }
         }
 
         logger.info('PWM', displayBrightness);
@@ -164,8 +214,8 @@ const handleButton = async function(button, levelRaw) {
         gpioDisplayPWM.pwmWrite(displayBrightness);
         await mqttClient.publish(`control-io/${cmnd}/STATE`, JSON.stringify(displayBrightness), {retain: true});
       } else {
-        let state = message ? 1 : 0;
-        let gpio;
+        let   gpio;
+        const state = message ? 1 : 0;
 
         switch(cmnd) {
           case 'display':
@@ -188,7 +238,7 @@ const handleButton = async function(button, levelRaw) {
 
         check.assert.nonEmptyObject(gpio, 'gpio missing');
 
-        // logger.debug('MQTT', {cmnd, state});
+        logger.debug('MQTT', {cmnd, state});
 
         gpio.digitalWrite(state);
         await mqttClient.publish(`control-io/${cmnd}/STATE`, JSON.stringify(state), {retain: true});
@@ -225,5 +275,7 @@ const handleButton = async function(button, levelRaw) {
 
   gpioButtonLower.on('alert', levelRaw => handleButton('buttonLower', levelRaw));
 
+  // #########################################################################
+  // Shutdown handler
   process.on('SIGTERM', () => stopProcess());
 })();
