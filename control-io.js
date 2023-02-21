@@ -6,7 +6,7 @@ import fsPromises            from 'fs/promises';
 
 import _                     from 'lodash';
 import check                 from 'check-types-2';
-import cron                  from 'node-cron';
+import cron                  from 'croner';
 import mqtt                  from 'async-mqtt';
 import ms                    from 'ms';
 import pigpio                from 'pigpio';
@@ -30,7 +30,12 @@ let   mqttClient;
 //   return date.getUTCHours(date);
 // };
 
-const schedule = function(hour, minute, weekdays, fct) {
+const schedule = function(inHour, inMinute, inWeekdays, inFct) {
+  const hour     = inHour;
+  let   minute   = inMinute;
+  let   weekdays = inWeekdays;
+  let   fct      = inFct;
+
   if(typeof minute === 'boolean') {
     fct      = weekdays;
     weekdays = minute;
@@ -51,19 +56,19 @@ const schedule = function(hour, minute, weekdays, fct) {
 
   // Note, scheduling for docker containers is done in UTC.
   //
-  //             ┌──────────────────────────────────────────────── second (optional)
-  //             │ ┌────────────────────────────────────────────── minute
-  //             │ │         ┌──────────────────────────────────── hour
-  //             │ │         │                           ┌──────── day of month
-  //             │ │         │                           │ ┌────── month
-  //             │ │         │                           │ │ ┌──── day of week (0 is Sunday)
-  //             │ │         │                           │ │ │
-  //             │ │         │                           │ │ │
-  //             S M         H                           D M W
-  cron.schedule(`0 ${minute} ${hour} * * ${weekdays ? '1-5' : '*'}`, () => {
+  //    ┌──────────────────────────── second (optional)
+  //    │ ┌────────────────────────── minute
+  //    │ │         ┌──────────────── hour
+  //    │ │         │       ┌──────── day of month
+  //    │ │         │       │ ┌────── month
+  //    │ │         │       │ │ ┌──── day of week (0 is Sunday)
+  //    │ │         │       │ │ │
+  //    │ │         │       │ │ │
+  //    S M         H       D M W
+  cron(`0 ${minute} ${hour} * * ${weekdays ? '1-5' : '*'}`, {timezone: 'Europe/Berlin'}, () => {
     logger.debug(`cron execute function at ${hour}:${minute}${weekdays ? ' on a weekday' : ''}`);
     fct();
-  }, {timezone: 'Europe/Berlin'});
+  });
 };
 
 const blink = async function(gpio, count) {
@@ -304,4 +309,38 @@ const handleButton = async function(button, levelRaw) {
   // #########################################################################
   // Shutdown handler
   process.on('SIGTERM', () => stopProcess());
+
+  // #########################################################################
+  // Regular tasks
+  logger.info('Starting cron scheduling for regular tasks');
+
+  // In the morning, switch to high brightness
+  schedule(8, () => mqttClient.publish('control-io/cmnd/brightness', '120', {retain: true}));
+
+  // In the evening, switch to low brightness
+  schedule(18, () => mqttClient.publish('control-io/cmnd/brightness', '180', {retain: true}));
+
+  // Weekdays, at 6:15, switch display on
+  schedule(6, 15, true, () => mqttClient.publish('control-io/cmnd/display', '1', {retain: true}));
+
+  // At 7:45, switch display on
+  schedule(7, 45, () => mqttClient.publish('control-io/cmnd/display', '1', {retain: true}));
+
+  // Weekdays, at 8:30, switch display off
+  schedule(8, 30, true, () => mqttClient.publish('control-io/cmnd/display', '0', {retain: true}));
+
+  // At 10:30, switch display off
+  schedule(10, 30, () => mqttClient.publish('control-io/cmnd/display', '0', {retain: true}));
+
+  // At 11:45, switch display on
+  schedule(11, 45, () => mqttClient.publish('control-io/cmnd/display', '1', {retain: true}));
+
+  // At 14:00, switch display off
+  schedule(14, () => mqttClient.publish('control-io/cmnd/display', '0', {retain: true}));
+
+  // At 17:30, switch display on
+  schedule(17, 30, () => mqttClient.publish('control-io/cmnd/display', '1', {retain: true}));
+
+  // At night, switch display off
+  schedule(22, 10, () => mqttClient.publish('control-io/cmnd/display', '0', {retain: true}));
 })();
