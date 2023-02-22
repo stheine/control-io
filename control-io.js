@@ -75,7 +75,7 @@ const schedule = function(purpose, hour, inMinute, inWeekdays, inFct) {
   //    │ │         │       │ │ │
   //    S M         H       D M W
   cron(`0 ${minute} ${hour} * * ${dayOfWeek}`, {timezone: 'Europe/Berlin'}, () => {
-    logger.debug(`cron ${purpose} at ${dayOfWeek === '*' ? '' : `${dayOfWeek}:`}${hour}:${minute}`);
+    logger.debug(`cron '${purpose}' at ${dayOfWeek === '*' ? '' : `${dayOfWeek}:`}${hour}:${minute}`);
     fct();
   });
 };
