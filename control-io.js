@@ -120,7 +120,7 @@ const handleButton = async function(button, levelRaw) {
       // Display off. Switch on.
       logger.debug(`${button}: display on`);
       mqttClient.publish('control-io/cmnd/display', '1', {retain: true});
-      mqttClient.publish('control-io/cmnd/route', '"/1"');
+      mqttClient.publish('control-ui/cmnd/route', '"/1"');
     }
   } else {
     // Button release
