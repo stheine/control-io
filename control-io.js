@@ -16,6 +16,7 @@ import logger                from './logger.js';
 // ###########################################################################
 // Globals
 
+let   buttonDisplayOffTimeout;
 let   buttonHoldTimeout;
 const {Gpio}            = pigpio;
 let   displayState      = 1;
@@ -95,6 +96,12 @@ const blink = async function(gpio, count) {
 const handleButton = async function(button, levelRaw) {
   const level = levelRaw ? 0 : 1;
 
+  if(buttonDisplayOffTimeout) {
+    logger.debug('handleButton, Display was just switched off. Suppress button.');
+
+    return;
+  }
+
   logger.debug('handleButton', {button, level, displayState});
 
   if(buttonHoldTimeout) {
@@ -111,6 +118,10 @@ const handleButton = async function(button, levelRaw) {
 
       logger.debug('buttonHoldTimeout:start');
       buttonHoldTimeout = setTimeout(() => {
+        buttonDisplayOffTimeout = setTimeout(() => {
+          buttonDisplayOffTimeout = null;
+        }, ms('0.5s'));
+
         buttonHoldTimeout = null;
 
         logger.debug('buttonHoldTimeout:trigger');
