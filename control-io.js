@@ -64,8 +64,6 @@ const schedule = function(purpose, hour, inMinute, inWeekdays, inFct) {
     dayOfWeek = '*';
   }
 
-  // Note, scheduling for docker containers is done in UTC.
-  //
   //    ┌──────────────────────────── second (optional)
   //    │ ┌────────────────────────── minute
   //    │ │         ┌──────────────── hour
