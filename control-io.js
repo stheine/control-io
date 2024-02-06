@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 
-import {setTimeout as delay} from 'timers/promises';
-import fs                    from 'fs';
-import fsPromises            from 'fs/promises';
+import {setTimeout as delay} from 'node:timers/promises';
+import fs                    from 'node:fs';
+import fsPromises            from 'node:fs/promises';
+import os                    from 'node:os';
 
 import _                     from 'lodash';
 import check                 from 'check-types-2';
@@ -19,6 +20,7 @@ import logger                from './logger.js';
 let   buttonDisplayOffTimeout;
 let   buttonHoldTimeout;
 const {Gpio}            = pigpio;
+const hostname          = os.hostname();
 let   displayState      = 1;
 let   displayBrightness = 70;
 let   mqttClient;
@@ -156,7 +158,7 @@ const handleButton = async function(button, levelRaw) {
 
   // #########################################################################
   // Init MQTT
-  mqttClient = await mqtt.connectAsync('tcp://192.168.6.7:1883');
+  mqttClient = await mqtt.connectAsync('tcp://192.168.6.5:1883', {clientId: hostname});
 
   // #########################################################################
   // Init gpio outputs
