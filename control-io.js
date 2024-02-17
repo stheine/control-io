@@ -23,6 +23,7 @@ const {Gpio}            = pigpio;
 const hostname          = os.hostname();
 let   displayState      = 1;
 let   displayBrightness = 70;
+let   healthInterval;
 let   mqttClient;
 
 // const localHourToUTCHour = function(localHour) {
@@ -194,6 +195,11 @@ const handleButton = async function(button, levelRaw) {
   const stopProcess = async function() {
     gpioDisplayPWM.pwmWrite(0);
 
+    if(healthInterval) {
+      clearInterval(healthInterval);
+      healthInterval = undefined;
+    }
+
     if(mqttClient) {
       await mqttClient.end();
       mqttClient = undefined;
@@ -242,8 +248,7 @@ const handleButton = async function(button, levelRaw) {
           gpioBeeper.digitalWrite(0);
         }, ms('100ms'));
         gpioBeeper.digitalWrite(1);
-      } else
-      if(cmnd === 'brightness') {
+      } else if(cmnd === 'brightness') {
         if(_.isNumber(message)) {
           displayBrightness = message;
         } else {
@@ -300,6 +305,10 @@ const handleButton = async function(button, levelRaw) {
   });
 
   await mqttClient.subscribe('control-io/cmnd/#');
+
+  healthInterval = setInterval(async() => {
+    await mqttClient.publish(`control-io/health/STATE`, 'OK');
+  }, ms('1min'));
 
   // #########################################################################
   // Init gpio inputs
